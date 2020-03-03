@@ -8,7 +8,7 @@ int Disassemble_ch8(unsigned char *codebuffer, int pc){
     byte_1 = code[0];
     byte_2 = code[1];
 
-    printf("Instruction: %02hhx%02hhx\t ", byte_1, byte_2);
+    printf("opcode: %02hhx %02hhx\t ", byte_1, byte_2);
 
     switch (byte_1 >> 4)
     {
@@ -47,32 +47,32 @@ int Disassemble_ch8(unsigned char *codebuffer, int pc){
             printf("Adds NN to VX.");
             break;
         case 0x08:
-            switch (byte_2 << 4){
+            switch (byte_2 & 0x0F){
                 case 0x00:
                     printf("Sets VX to the value of VY.");
                     break;
-                case 0x10:
+                case 0x01:
                     printf("Sets VX to VX or VY.");
                     break;
-                case 0x20:
+                case 0x02:
                     printf("Sets VX to VX and VY.");
                     break;
-                case 0x30:
+                case 0x03:
                     printf("Sets VX to VX xor VY.");
                     break;
-                case 0x40:
+                case 0x04:
                     printf("Sets VX to the value of VY.");
                     break;
-                case 0x50:
+                case 0x05:
                     printf("Adds VY to VX.");
                     break;
-                case 0x60:
+                case 0x06:
                     printf("VY is subtracted from VX.");
                     break;
-                case 0x70:
+                case 0x07:
                     printf("performs Vx>>=1");
                     break;
-                case 0xE0:
+                case 0x0E:
                     printf("performs Vx=Vy-Vx");
                     break;
             }
