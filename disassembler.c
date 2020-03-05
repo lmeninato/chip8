@@ -1,14 +1,18 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 int Disassemble_ch8(unsigned char *codebuffer, int pc){
     unsigned char *code = &codebuffer[pc];
-    int opbytes = 2;
+    unsigned short opcode;
+    unsigned short I;
     printf ("%04x ", pc);
     unsigned char byte_1, byte_2;
     byte_1 = code[0];
     byte_2 = code[1];
+    opcode = (((unsigned short) byte_1) << 8) | byte_2;
 
     printf("opcode: %02hhx %02hhx\t ", byte_1, byte_2);
+    I = opcode & 0x0FFF;
 
     switch (byte_1 >> 4)
     {
@@ -21,30 +25,30 @@ int Disassemble_ch8(unsigned char *codebuffer, int pc){
                     printf("return from subroutine");
                     break;
                 default:
-                    printf("Calls RCA 1802 program at address NNN. Not necessary for most ROMs.");
+                    printf("Calls RCA 1802 program at address 0x%03x", I);
                     break;
             }
             break;
         case 0x01:
-            printf("Jumps to address NNN.");
+            printf("Jumps to address 0x%03x", I);
             break;
         case 0x02:
-            printf("Calls subroutine at NNN.");
+            printf("Calls subroutine at 0x%03x", I);
             break;
         case 0x03:
-            printf("Skips the next instruction if VX equals NN.");
+            printf("Skips the next instruction if VX equals %02x", byte_2);
             break;
         case 0x04:
-            printf("Skips the next instruction if VX doesn't equal NN.");
+            printf("Skips the next instruction if VX doesn't equal %02x", byte_2);
             break;
         case 0x05:
             printf("Skips the next instruction if VX equals VY.");
             break;
         case 0x06:
-            printf("Sets VX to NN.");
+            printf("Sets VX to %02x", byte_2);
             break;
         case 0x07:
-            printf("Adds NN to VX.");
+            printf("Adds %02x to VX", byte_2);
             break;
         case 0x08:
             switch (byte_2 & 0x0F){
@@ -81,13 +85,13 @@ int Disassemble_ch8(unsigned char *codebuffer, int pc){
             printf("Skips the next instruction if VX doesn't equal VY.");
             break;
         case 0x0A:
-            printf("Sets I to the address NNN.");
+            printf("Sets I to the address 0x%03x", I);
             break;
         case 0x0B:
-            printf("Jumps to the address NNN plus V0.");
+            printf("Jumps to the address 0x%03x plus V0", I);
             break;
         case 0x0C:
-            printf("performs Vx=rand()&NN");
+            printf("performs Vx=rand()&%02x", byte_2);
             break;
         case 0x0D:
             printf("performs draw(Vx,Vy,N)");
@@ -137,7 +141,7 @@ int Disassemble_ch8(unsigned char *codebuffer, int pc){
 
     printf("\n");
 
-    return opbytes;
+    return 2;
 }
 
 int main(int argc, char **argv){
@@ -167,5 +171,7 @@ int main(int argc, char **argv){
     {
         pc += Disassemble_ch8(buffer, pc);
     }
+
+    free(buffer);
     return 0;
 }
