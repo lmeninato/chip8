@@ -15,5 +15,8 @@ clean:
 	rm -f bin/disch8 bin/chip8_emu
 	rm -rf bin/*dSYM/
 
+test:
+	./bin/chip8_emu games/Pong.ch8
+
 dis_test:
 	./bin/disch8 games/Pong.ch8

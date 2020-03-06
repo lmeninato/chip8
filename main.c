@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define DEBUG_INPUT 0
+
 typedef struct chip8 {
     /*
     Systems memory map:
@@ -23,11 +25,28 @@ typedef struct chip8 {
 void initialize_chip8(int argc, char **argv);
 void handle_input(int argc, char **argv);
 void write_fontset_to_memory();
+void emulate_cycle();
 
 chip8 chip8_emu;
 int main(int argc, char **argv){
+    // Loads game ROM and fontset into chip8_emu memory
+    initialize_chip8(argc, argv);
+
+
+
+    return 0;
+}
+
+void initialize_chip8(int argc, char **argv){
+    handle_input(argc, argv);
+    write_fontset_to_memory();
+}
+
+void handle_input(int argc, char **argv){
+    // parse the input
     if (argc != 2){
         printf("Incorrect number of arguments\n");
+        exit(1);
     }
     FILE *f = fopen(argv[1], "rb");
     if (f==NULL){
@@ -41,25 +60,27 @@ int main(int argc, char **argv){
     fseek(f, 0L, SEEK_SET);
 
     unsigned char *buffer=malloc(fsize);
+    int loc;
 
-    fread(buffer, fsize, 2, f);
-    // Write buffer to 0x200 in memory
+    fread(buffer, fsize, 1, f);
+    // Write buffer to 0x200 in chip8_emu memory
+    unsigned char byte;
+    for(loc = 0; loc <= fsize; loc++){
+        byte = buffer[loc];
+        chip8_emu.memory[0x200 + loc] = byte;
+    }
+#if DEBUG_INPUT
+    int i;
+    for (i = 0; i < 15; i++){
+        printf("chip8_emu memory at index 0x%03x: 0x%02x\n", 0x200+i, chip8_emu.memory[0x200 + i]);
+    }
+    for (i = 0; i < 11; i++){
+        printf("chip8_emu memory at index 0x%03x: 0x%02x\n", 0x200+235+i, chip8_emu.memory[0x200+235+i]);
+    }
+#endif
     fclose(f);
 
     free(buffer);
-    return 0;
-}
-
-void initialize_chip8(int argc, char **argv){
-    // chip8_emu is global object
-    handle_input(argc, argv);
-    write_fontset_to_memory();
-}
-
-void handle_input(int argc, char **argv){
-    // parse the input
-
-    // write ROM data to 0x200-0xFFF
 }
 
 void write_fontset_to_memory(){
@@ -86,4 +107,12 @@ void write_fontset_to_memory(){
     for (i = 0; i < 80; ++i){
         chip8_emu.memory[i+0x050] = chip8_fontset[i];
     }
+}
+
+void emulate_cycle(){
+    // Fetch opcode
+
+    // Decode
+
+    // Execute
 }
