@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <SDL2/SDL.h>
+
 
 #define DEBUG_INPUT 0
+#define SCREEN_WIDTH 64
+#define SCREEN_LENGTH 32
 
 typedef struct chip8 {
     /*
@@ -11,7 +15,7 @@ typedef struct chip8 {
     0x200-0xFFF - Program ROM and work RAM
     */
     unsigned char memory[4096];
-    unsigned char gfx[64 * 32];
+    unsigned char gfx[SCREEN_WIDTH * SCREEN_LENGTH];
     unsigned short stack[16];
     unsigned char V[16]; // 15 8 bit registers, last register for carry
     unsigned short sp; // stack pointer
@@ -23,37 +27,165 @@ typedef struct chip8 {
     unsigned char sound_timer;
 } chip8;
 
-void initialize_chip8(int argc, char **argv);
+typedef struct SDL_OBJECTS {
+    SDL_Window* win;
+    SDL_Renderer* rend;
+    SDL_Texture* tex;
+    SDL_Rect dest;
+} SDL_OBJECTS;
+
+void initialize_chip8(int argc, char **argv, SDL_OBJECTS* graphics_container);
 void handle_rom_input(int argc, char **argv);
 void write_fontset_to_memory();
 void emulate_cycle();
-void draw_graphics();
+void setup_graphics(SDL_OBJECTS* graphics_container);
+void update_graphics();
 void handle_key_press();
 
 chip8 chip8_emu;
 int main(int argc, char **argv){
     // Loads game ROM and fontset into chip8_emu memory
-    initialize_chip8(argc, argv);
-
+    SDL_OBJECTS graphics_container;
+    initialize_chip8(argc, argv, &graphics_container);
+    update_graphics(graphics_container.win,
+                    graphics_container.rend,
+                    graphics_container.tex,
+                    graphics_container.dest);
+/*
     for (;;){
         emulate_cycle();
         if (chip8_emu.draw_flag){
-            draw_graphics();
+            update_graphics();
         }
         handle_key_press();
     }
-
+*/
     return 0;
 }
 
-void initialize_chip8(int argc, char **argv){
+void initialize_chip8(int argc, char **argv, SDL_OBJECTS* graphics_container){
+    setup_graphics(graphics_container);
     handle_rom_input(argc, argv);
     write_fontset_to_memory();
     chip8_emu.pc = 0x200;  // Program counter starts at 0x200
     chip8_emu.I = 0;       // Reset index register
     chip8_emu.sp = 0;      // Reset stack pointer
+}
 
-    // setup graphics
+void setup_graphics(SDL_OBJECTS* graphics_container){
+    // retutns zero on success else non-zero
+    if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
+        printf("error initializing SDL: %s\n", SDL_GetError());
+    }
+    SDL_Window* win = SDL_CreateWindow("GAME", // creates a window
+                                       SDL_WINDOWPOS_CENTERED,
+                                       SDL_WINDOWPOS_CENTERED,
+                                       1000, 1000, 0);
+
+    // triggers the program that controls your graphics hardware and sets flags
+    Uint32 render_flags = SDL_RENDERER_ACCELERATED;
+
+    // creates a renderer to render our images
+    SDL_Renderer* rend = SDL_CreateRenderer(win, -1, render_flags);
+
+    // creates a surface to load an image into the main memory
+    SDL_Surface* surface;
+    SDL_Surface* screen_surface;
+    screen_surface = SDL_GetWindowSurface(win);
+    surface = SDL_LoadBMP("resources/zero.bmp");
+
+    // loads image to our graphics hardware memory.
+    SDL_Texture* tex = SDL_CreateTextureFromSurface(rend, surface);
+
+    // clears main-memory
+    SDL_FreeSurface(surface);
+
+    // let us control our image position so that we can move it with our keyboard.
+    SDL_Rect dest;
+
+    // connects our texture with dest to control position
+    SDL_QueryTexture(tex, NULL, NULL, &dest.w, &dest.h);
+
+    graphics_container->win = win;
+    graphics_container->rend = rend;
+    graphics_container->tex = tex;
+    graphics_container->dest = dest;
+}
+
+void update_graphics(SDL_Window* win, SDL_Renderer* rend, SDL_Texture* tex, SDL_Rect dest){
+    // adjust height and width of our image box.
+    dest.w /= 6;
+    dest.h /= 6;
+
+    // sets initial x-position of object
+    dest.x = (1000 - dest.w) / 2;
+
+    // sets initial y-position of object
+    dest.y = (1000 - dest.h) / 2;
+
+    // controls annimation loop
+    int close = 0;
+
+    // speed of box
+    int speed = 300;
+
+    // annimation loop
+    while (!close) {
+        SDL_Event event;
+
+        // Events mangement
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+
+            case SDL_QUIT:
+                // handling of close button
+                close = 1;
+                break;
+
+            case SDL_KEYDOWN:
+                // keyboard API for key pressed
+                switch (event.key.keysym.scancode) {
+                case SDL_SCANCODE_W:
+                case SDL_SCANCODE_UP:
+                    dest.y -= speed / 30;
+                    break;
+                case SDL_SCANCODE_A:
+                case SDL_SCANCODE_LEFT:
+                    dest.x -= speed / 30;
+                    break;
+                case SDL_SCANCODE_S:
+                case SDL_SCANCODE_DOWN:
+                    dest.y += speed / 30;
+                    break;
+                case SDL_SCANCODE_D:
+                case SDL_SCANCODE_RIGHT:
+                    dest.x += speed / 30;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+
+        // clears the screen
+        SDL_RenderClear(rend);
+        SDL_RenderCopy(rend, tex, NULL, &dest);
+
+        // triggers the double buffers for multiple rendering
+        SDL_RenderPresent(rend);
+
+        // calculates to 60 fps
+        SDL_Delay(1000 / 60);
+    }
+
+    // destroy texture
+    SDL_DestroyTexture(tex);
+
+    // destroy renderer
+    SDL_DestroyRenderer(rend);
+
+    // destroy window
+    SDL_DestroyWindow(win);
 }
 
 void handle_rom_input(int argc, char **argv){
@@ -133,10 +265,10 @@ void emulate_cycle(){
     unsigned char byte_1, byte_2;
     byte_1 = (unsigned char) (opcode >> 8);
     byte_2 = (unsigned char) (opcode & 0xFF);
+#if DEBUG_INPUT
     printf("byte_1: 0x%02x\nbyte_2: 0x%02x\n", byte_1, byte_2);
     printf("opcode: 0x%04x\n", opcode);
-    // Execute
-
+#endif
     // Switch on first nibble
     switch (byte_1 >> 4)
     {
@@ -448,11 +580,6 @@ void emulate_cycle(){
         chip8_emu.sound_timer--;
         }
     }
-}
-
-void draw_graphics(){
-    // need to implement
-    return;
 }
 
 void handle_key_press(){

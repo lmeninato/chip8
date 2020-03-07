@@ -4,7 +4,7 @@ DIS_TARGET = bin/disch8
 TARGET = bin/chip8_emu
 
 all:
-	$(CC) $(CFLAGS) main.c -o $(TARGET)
+	$(CC) $(CFLAGS) main.c -o $(TARGET) -I include -L lib -l SDL2
 	rm -rf bin/*dSYM/
 
 dis:
