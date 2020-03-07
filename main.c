@@ -24,35 +24,39 @@ typedef struct chip8 {
 } chip8;
 
 void initialize_chip8(int argc, char **argv);
-void handle_input(int argc, char **argv);
+void handle_rom_input(int argc, char **argv);
 void write_fontset_to_memory();
 void emulate_cycle();
+void draw_graphics();
+void handle_key_press();
 
 chip8 chip8_emu;
 int main(int argc, char **argv){
     // Loads game ROM and fontset into chip8_emu memory
     initialize_chip8(argc, argv);
 
-
+    for (;;){
+        emulate_cycle();
+        if (chip8_emu.draw_flag){
+            draw_graphics();
+        }
+        handle_key_press();
+    }
 
     return 0;
 }
 
 void initialize_chip8(int argc, char **argv){
-    handle_input(argc, argv);
+    handle_rom_input(argc, argv);
     write_fontset_to_memory();
     chip8_emu.pc = 0x200;  // Program counter starts at 0x200
     chip8_emu.I = 0;       // Reset index register
     chip8_emu.sp = 0;      // Reset stack pointer
 
-    int i;
-    for (i = 0; i < 5; i++){
-        emulate_cycle();
-        chip8_emu.pc += 2;
-    }
+    // setup graphics
 }
 
-void handle_input(int argc, char **argv){
+void handle_rom_input(int argc, char **argv){
     // parse the input
     if (argc != 2){
         printf("Incorrect number of arguments\n");
@@ -131,7 +135,6 @@ void emulate_cycle(){
     byte_2 = (unsigned char) (opcode & 0xFF);
     printf("byte_1: 0x%02x\nbyte_2: 0x%02x\n", byte_1, byte_2);
     printf("opcode: 0x%04x\n", opcode);
-    unsigned short I = 0xFFFF;
     // Execute
 
     // Switch on first nibble
@@ -270,60 +273,164 @@ void emulate_cycle(){
                     break;
             }
             break;
+        // case 9XY0 - Skips the next instruction if VX doesn't equal VY.
         case 0x09:
-            printf("Skips the next instruction if VX doesn't equal VY.");
+            if (chip8_emu.V[byte_1 & 0x0F] != chip8_emu.V[byte_2 & 0xF0]){
+                chip8_emu.pc += 4;
+            } else {
+                chip8_emu.pc += 2;
+            }
             break;
+        // case ANNN - sets I to the address NNN
         case 0x0A:
-            printf("Sets I to the address 0x%03x", I);
+            chip8_emu.I = opcode & 0x0FFF;
+            chip8_emu.pc += 2;
             break;
+        // case BNNN - Jumps to the address NNN plus V0.
         case 0x0B:
-            printf("Jumps to the address 0x%03x plus V0", I);
+            chip8_emu.pc = (opcode & 0x0FFF) + chip8_emu.V[0x00];
             break;
+        // case CXNN - Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 255) and NN.
         case 0x0C:
-            printf("performs Vx=rand()&%02x", byte_2);
+            chip8_emu.V[byte_1 & 0x0F] = (unsigned char) ((rand() % 255) & byte_2);
             break;
-        case 0x0D:
-            printf("performs draw(Vx,Vy,N)");
+        // case DXYN - now shit gets real - draw sprite on screen
+        case 0x0D: {
+            /* Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
+             Each row of 8 pixels is read as bit-coded starting from memory location I;
+             I value doesn’t change after the execution of this instruction.
+             As described above, VF is set to 1 if any screen pixels are flipped
+             from set to unset when the sprite is drawn, and to 0 if that doesn’t happen
+            */
+            unsigned char vx = chip8_emu.V[byte_1 & 0x0F];
+            unsigned char vy = chip8_emu.V[byte_2 & 0xF0];
+            unsigned char height = byte_2 & 0x0F;
+            unsigned char pixel;
+
+            int x;
+            int y;
+
+            chip8_emu.V[0xF] = 0;
+
+            for (y = 0; y < height; y++){
+                pixel = chip8_emu.memory[chip8_emu.I+y];
+                for (x = 0; x < 8; x++){
+                    if ((pixel & (0x80 >> x)) != 0){
+                        if (chip8_emu.gfx[(vy + y)*64 + vx +x] == 1){
+                            chip8_emu.V[0xF] = 1;
+                        }
+                        chip8_emu.gfx[(vy + y)*64 + vx +x] ^= 1;
+                    }
+                }
+            }
+            chip8_emu.draw_flag = 1;
+            chip8_emu.pc += 2;
+
             break;
+        }
         case 0x0E:
+            // case EX9E - Skips the next instruction if the key stored in VX is pressed.
             switch (byte_2){
                 case 0x9E:
-                    printf("Skips the next instruction if the key stored in VX is pressed.");
+                    if (chip8_emu.key[chip8_emu.V[byte_1 & 0x0F]]){
+                        chip8_emu.pc += 4;
+                    } else {
+                        chip8_emu.pc += 2;
+                    }
                     break;
+            // case EXA1 - Skips the next instruction if the key stored in VX isn't pressed.
                 case 0xA1:
-                    printf("Skips the next instruction if the key stored in VX isn't pressed.");
+                    if (chip8_emu.key[chip8_emu.V[byte_1 & 0x0F]] == 0){
+                        chip8_emu.pc += 4;
+                    } else {
+                        chip8_emu.pc += 2;
+                    }
                     break;
             }
             break;
         case 0x0F:
             switch (byte_2){
+                // case FX07 - Sets VX to the value of the delay timer.
                 case 0x07:
-                    printf("Sets VX to the value of the delay timer.");
+                    chip8_emu.V[byte_1 & 0x0F] = chip8_emu.delay_timer;
                     break;
-                case 0x0A:
-                    printf("A key press is awaited, and then stored in VX.");
+                // case FX0A - A key press is awaited, and then stored in VX.
+                case 0x0A: {
+                    unsigned char key_pressed = 0;
+                    int i;
+
+                    for (i = 0; i < 16; i++){
+                        if (chip8_emu.key[i] != 0){
+                            chip8_emu.V[byte_1 & 0x0F] = chip8_emu.key[i];
+                            key_pressed = 1;
+                        }
+                    }
+
+                    if (key_pressed == 0){
+                        return;
+                    }
+
+                    chip8_emu.pc += 2;
+
                     break;
+                }
+                // case FX15 - Sets the delay timer to VX.
                 case 0x15:
-                    printf("Sets the delay timer to VX.");
+                    chip8_emu.delay_timer = chip8_emu.V[byte_1 & 0x0F];
                     break;
+                // case FX18 - Sets the sound timer to VX.
                 case 0x18:
-                    printf("Sets the sound timer to VX.");
+                    chip8_emu.sound_timer = chip8_emu.V[byte_1 & 0x0F];
                     break;
+                // case FX1E - Adds VX to I. VF is set to 1 when there is a range overflow (I+VX>0xFFF), and to 0 when there isn't.
                 case 0x1E:
-                    printf("Adds VX to I.");
+                    if (chip8_emu.I > 0xFFF - chip8_emu.V[byte_1 & 0x0F]){
+                        chip8_emu.V[0xF] = 1;
+                    } else {
+                        chip8_emu.V[0xF] = 0;
+                    }
+                    chip8_emu.I += chip8_emu.V[byte_1 & 0x0F];
+                    chip8_emu.pc += 2;
                     break;
+                // case FX29 - Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
                 case 0x29:
-                    printf("Sets I to the location of the sprite for the character in VX. ");
+                    chip8_emu.I = chip8_emu.V[byte_1 & 0x0F] * 5; // not sure
+                    chip8_emu.pc += 2;
                     break;
+                // case FX33
                 case 0x33:
-                    printf("compute binary-coded decimal");
+                    /* Stores the binary-coded decimal representation of VX, with
+                    the most significant of three digits at the address in I,
+                    the middle digit at I plus 1, and the least significant digit at I plus 2.
+                    (In other words, take the decimal representation of VX,
+                    place the hundreds digit in memory at location in I,
+                    the tens digit at location I+1, and the ones digit at location I+2.)
+                    */
+                    chip8_emu.memory[chip8_emu.I] = chip8_emu.V[byte_1 & 0x0F] / 100;
+                    chip8_emu.memory[chip8_emu.I+1] = (chip8_emu.V[byte_1 & 0x0F] % 100) / 10;
+                    chip8_emu.memory[chip8_emu.I+2] = chip8_emu.V[byte_1 & 0x0F] % 10;
+                    chip8_emu.pc += 2;
                     break;
-                case 0x55:
-                    printf("Stores V0 to VX (including VX) in memory starting at address I.");
+                // case FX55 - Stores V0 to VX (including VX) in memory starting at address I.
+                // The offset from I is increased by 1 for each value written, but I itself is left unmodified.
+                case 0x55: {
+                    int i;
+                    for (i = 0; i <= (byte_1 & 0x0F); i++){
+                        chip8_emu.memory[chip8_emu.I + i] = chip8_emu.V[i];
+                    }
+                    chip8_emu.pc += 2;
                     break;
-                case 0x65:
-                    printf("Fills V0 to VX (including VX) with values from memory starting at address I.");
+                }
+                // case FX65 - Fills V0 to VX (including VX) with values from memory starting at address I.
+                // The offset from I is increased by 1 for each value written, but I itself is left unmodified.
+                case 0x65: {
+                    int i;
+                    for (i = 0; i <= (byte_1 & 0x0F); i++){
+                        chip8_emu.V[i] = chip8_emu.memory[chip8_emu.I + i];
+                    }
+                    chip8_emu.pc += 2;
                     break;
+                }
             }
             break;
     }
@@ -331,13 +438,24 @@ void emulate_cycle(){
     // Update timers, adapted from:
     // http://www.multigesture.net/articles/how-to-write-an-emulator-chip-8-interpreter/
     if(chip8_emu.delay_timer > 0){
-      --chip8_emu.delay_timer;
+      chip8_emu.delay_timer--;
     }
 
     if(chip8_emu.sound_timer > 0)
     {
-      if(chip8_emu.sound_timer == 1)
+      if(chip8_emu.sound_timer == 1){
         printf("BEEP!\n");
-      --chip8_emu.sound_timer;
+        chip8_emu.sound_timer--;
+        }
     }
+}
+
+void draw_graphics(){
+    // need to implement
+    return;
+}
+
+void handle_key_press(){
+    // need to implement
+    return;
 }
