@@ -30,16 +30,17 @@ typedef struct chip8 {
 typedef struct SDL_OBJECTS {
     SDL_Window* win;
     SDL_Renderer* rend;
-    SDL_Texture* tex;
-    SDL_Rect dest;
+    SDL_Surface* screen_surface;
 } SDL_OBJECTS;
 
 void initialize_chip8(int argc, char **argv, SDL_OBJECTS* graphics_container);
 void handle_rom_input(int argc, char **argv);
 void write_fontset_to_memory();
 void emulate_cycle();
+
 void setup_graphics(SDL_OBJECTS* graphics_container);
-void update_graphics();
+void update_graphics(SDL_Window* win, SDL_Renderer* rend, SDL_Surface* screen_surface);
+void putpixel(SDL_Surface *surface, int x, int y, Uint32 pixel);
 void handle_key_press();
 
 chip8 chip8_emu;
@@ -49,8 +50,7 @@ int main(int argc, char **argv){
     initialize_chip8(argc, argv, &graphics_container);
     update_graphics(graphics_container.win,
                     graphics_container.rend,
-                    graphics_container.tex,
-                    graphics_container.dest);
+                    graphics_container.screen_surface);
 /*
     for (;;){
         emulate_cycle();
@@ -89,87 +89,86 @@ void setup_graphics(SDL_OBJECTS* graphics_container){
     SDL_Renderer* rend = SDL_CreateRenderer(win, -1, render_flags);
 
     // creates a surface to load an image into the main memory
-    SDL_Surface* surface;
     SDL_Surface* screen_surface;
     screen_surface = SDL_GetWindowSurface(win);
-    surface = SDL_LoadBMP("resources/zero.bmp");
 
-    // loads image to our graphics hardware memory.
-    SDL_Texture* tex = SDL_CreateTextureFromSurface(rend, surface);
-
-    // clears main-memory
-    SDL_FreeSurface(surface);
-
-    // let us control our image position so that we can move it with our keyboard.
-    SDL_Rect dest;
-
-    // connects our texture with dest to control position
-    SDL_QueryTexture(tex, NULL, NULL, &dest.w, &dest.h);
 
     graphics_container->win = win;
     graphics_container->rend = rend;
-    graphics_container->tex = tex;
-    graphics_container->dest = dest;
+    graphics_container->screen_surface = screen_surface;
 }
 
-void update_graphics(SDL_Window* win, SDL_Renderer* rend, SDL_Texture* tex, SDL_Rect dest){
-    // adjust height and width of our image box.
-    dest.w /= 6;
-    dest.h /= 6;
-
-    // sets initial x-position of object
-    dest.x = (1000 - dest.w) / 2;
-
-    // sets initial y-position of object
-    dest.y = (1000 - dest.h) / 2;
-
+void update_graphics(SDL_Window* win,
+                     SDL_Renderer* rend,
+                     SDL_Surface* screen_surface){
     // controls annimation loop
     int close = 0;
-
-    // speed of box
-    int speed = 300;
 
     // annimation loop
     while (!close) {
         SDL_Event event;
 
+        // We clear what we draw before
+        SDL_RenderClear(rend);
+        // Set our color for the draw functions
+        SDL_SetRenderDrawColor(rend, 0xFF, 0xFF, 0xFF, 0xFF);
+        // Now we can draw our point
+        SDL_RenderDrawPoint(rend, 500, 500);
+        // Set the color to what was before
+        SDL_SetRenderDrawColor(rend, 0x00, 0x00, 0x00, 0xFF);
+        // .. you could do some other drawing here
+        // And now we present everything we draw after the clear.
+        SDL_RenderPresent(rend);
         // Events mangement
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
-
-            case SDL_QUIT:
-                // handling of close button
-                close = 1;
-                break;
-
-            case SDL_KEYDOWN:
-                // keyboard API for key pressed
-                switch (event.key.keysym.scancode) {
-                case SDL_SCANCODE_W:
-                case SDL_SCANCODE_UP:
-                    dest.y -= speed / 30;
+                case SDL_QUIT:
+                    // handling of close button
+                    close = 1;
                     break;
-                case SDL_SCANCODE_A:
-                case SDL_SCANCODE_LEFT:
-                    dest.x -= speed / 30;
-                    break;
-                case SDL_SCANCODE_S:
-                case SDL_SCANCODE_DOWN:
-                    dest.y += speed / 30;
-                    break;
-                case SDL_SCANCODE_D:
-                case SDL_SCANCODE_RIGHT:
-                    dest.x += speed / 30;
-                    break;
-                default:
-                    break;
+                case SDL_KEYDOWN:
+                    // keyboard API for key pressed
+                    switch (event.key.keysym.scancode) {
+                        case SDL_SCANCODE_1:
+                            chip8_emu.key[0] = 1;
+                        case SDL_SCANCODE_2:
+                            chip8_emu.key[1] = 1;
+                        case SDL_SCANCODE_3:
+                            chip8_emu.key[2] = 1;
+                        case SDL_SCANCODE_4:
+                            chip8_emu.key[3] = 1;
+                        case SDL_SCANCODE_Q:
+                            chip8_emu.key[4] = 1;
+                        case SDL_SCANCODE_W:
+                            chip8_emu.key[5] = 1;
+                        case SDL_SCANCODE_E:
+                            chip8_emu.key[6] = 1;
+                        case SDL_SCANCODE_R:
+                            chip8_emu.key[7] = 1;
+                        case SDL_SCANCODE_A:
+                            chip8_emu.key[8] = 1;
+                        case SDL_SCANCODE_S:
+                            chip8_emu.key[9] = 1;
+                        case SDL_SCANCODE_D:
+                            chip8_emu.key[10] = 1;
+                        case SDL_SCANCODE_F:
+                            chip8_emu.key[11] = 1;
+                        case SDL_SCANCODE_Z:
+                            chip8_emu.key[12] = 1;
+                        case SDL_SCANCODE_X:
+                            chip8_emu.key[13] = 1;
+                        case SDL_SCANCODE_C:
+                            chip8_emu.key[14] = 1;
+                        case SDL_SCANCODE_V:
+                            chip8_emu.key[15] = 1;
+                        default:
+                            break;
+                    }
                 }
-            }
         }
 
         // clears the screen
         SDL_RenderClear(rend);
-        SDL_RenderCopy(rend, tex, NULL, &dest);
 
         // triggers the double buffers for multiple rendering
         SDL_RenderPresent(rend);
@@ -177,9 +176,6 @@ void update_graphics(SDL_Window* win, SDL_Renderer* rend, SDL_Texture* tex, SDL_
         // calculates to 60 fps
         SDL_Delay(1000 / 60);
     }
-
-    // destroy texture
-    SDL_DestroyTexture(tex);
 
     // destroy renderer
     SDL_DestroyRenderer(rend);
