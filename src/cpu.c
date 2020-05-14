@@ -1,188 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <SDL2/SDL.h>
-
-
-#define DEBUG_INPUT 0
-#define SCREEN_WIDTH 64
-#define SCREEN_LENGTH 32
-
-typedef struct chip8 {
-    /*
-    Systems memory map:
-    0x000-0x1FF - Chip 8 interpreter (contains font set in emu)
-    0x050-0x0A0 - Used for the built in 4x5 pixel font set (0-F)
-    0x200-0xFFF - Program ROM and work RAM
-    */
-    unsigned char memory[4096];
-    unsigned char gfx[SCREEN_WIDTH * SCREEN_LENGTH];
-    unsigned short stack[16];
-    unsigned char V[16]; // 15 8 bit registers, last register for carry
-    unsigned short sp; // stack pointer
-    unsigned short I; // index register
-    unsigned short pc; // program counter
-    unsigned char key[16]; // keypad
-    unsigned char draw_flag;
-    unsigned char delay_timer;
-    unsigned char sound_timer;
-} chip8;
-
-typedef struct SDL_OBJECTS {
-    SDL_Window* win;
-    SDL_Renderer* rend;
-    SDL_Surface* screen_surface;
-} SDL_OBJECTS;
-
-void initialize_chip8(int argc, char **argv, SDL_OBJECTS* graphics_container);
-void handle_rom_input(int argc, char **argv);
-void write_fontset_to_memory();
-void emulate_cycle();
-
-void setup_graphics(SDL_OBJECTS* graphics_container);
-void update_graphics(SDL_Window* win, SDL_Renderer* rend, SDL_Surface* screen_surface);
-void putpixel(SDL_Surface *surface, int x, int y, Uint32 pixel);
-void handle_key_press();
-
-chip8 chip8_emu;
-int main(int argc, char **argv){
-    // Loads game ROM and fontset into chip8_emu memory
-    SDL_OBJECTS graphics_container;
-    initialize_chip8(argc, argv, &graphics_container);
-    update_graphics(graphics_container.win,
-                    graphics_container.rend,
-                    graphics_container.screen_surface);
-/*
-    for (;;){
-        emulate_cycle();
-        if (chip8_emu.draw_flag){
-            update_graphics();
-        }
-        handle_key_press();
-    }
-*/
-    return 0;
-}
-
-void initialize_chip8(int argc, char **argv, SDL_OBJECTS* graphics_container){
-    setup_graphics(graphics_container);
-    handle_rom_input(argc, argv);
-    write_fontset_to_memory();
-    chip8_emu.pc = 0x200;  // Program counter starts at 0x200
-    chip8_emu.I = 0;       // Reset index register
-    chip8_emu.sp = 0;      // Reset stack pointer
-}
-
-void setup_graphics(SDL_OBJECTS* graphics_container){
-    // retutns zero on success else non-zero
-    if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
-        printf("error initializing SDL: %s\n", SDL_GetError());
-    }
-    SDL_Window* win = SDL_CreateWindow("GAME", // creates a window
-                                       SDL_WINDOWPOS_CENTERED,
-                                       SDL_WINDOWPOS_CENTERED,
-                                       1000, 1000, 0);
-
-    // triggers the program that controls your graphics hardware and sets flags
-    Uint32 render_flags = SDL_RENDERER_ACCELERATED;
-
-    // creates a renderer to render our images
-    SDL_Renderer* rend = SDL_CreateRenderer(win, -1, render_flags);
-
-    // creates a surface to load an image into the main memory
-    SDL_Surface* screen_surface;
-    screen_surface = SDL_GetWindowSurface(win);
-
-
-    graphics_container->win = win;
-    graphics_container->rend = rend;
-    graphics_container->screen_surface = screen_surface;
-}
-
-void update_graphics(SDL_Window* win,
-                     SDL_Renderer* rend,
-                     SDL_Surface* screen_surface){
-    // controls annimation loop
-    int close = 0;
-
-    // annimation loop
-    while (!close) {
-        SDL_Event event;
-
-        // We clear what we draw before
-        SDL_RenderClear(rend);
-        // Set our color for the draw functions
-        SDL_SetRenderDrawColor(rend, 0xFF, 0xFF, 0xFF, 0xFF);
-        // Now we can draw our point
-        SDL_RenderDrawPoint(rend, 500, 500);
-        // Set the color to what was before
-        SDL_SetRenderDrawColor(rend, 0x00, 0x00, 0x00, 0xFF);
-        // .. you could do some other drawing here
-        // And now we present everything we draw after the clear.
-        SDL_RenderPresent(rend);
-        // Events mangement
-        while (SDL_PollEvent(&event)) {
-            switch (event.type) {
-                case SDL_QUIT:
-                    // handling of close button
-                    close = 1;
-                    break;
-                case SDL_KEYDOWN:
-                    // keyboard API for key pressed
-                    switch (event.key.keysym.scancode) {
-                        case SDL_SCANCODE_1:
-                            chip8_emu.key[0] = 1;
-                        case SDL_SCANCODE_2:
-                            chip8_emu.key[1] = 1;
-                        case SDL_SCANCODE_3:
-                            chip8_emu.key[2] = 1;
-                        case SDL_SCANCODE_4:
-                            chip8_emu.key[3] = 1;
-                        case SDL_SCANCODE_Q:
-                            chip8_emu.key[4] = 1;
-                        case SDL_SCANCODE_W:
-                            chip8_emu.key[5] = 1;
-                        case SDL_SCANCODE_E:
-                            chip8_emu.key[6] = 1;
-                        case SDL_SCANCODE_R:
-                            chip8_emu.key[7] = 1;
-                        case SDL_SCANCODE_A:
-                            chip8_emu.key[8] = 1;
-                        case SDL_SCANCODE_S:
-                            chip8_emu.key[9] = 1;
-                        case SDL_SCANCODE_D:
-                            chip8_emu.key[10] = 1;
-                        case SDL_SCANCODE_F:
-                            chip8_emu.key[11] = 1;
-                        case SDL_SCANCODE_Z:
-                            chip8_emu.key[12] = 1;
-                        case SDL_SCANCODE_X:
-                            chip8_emu.key[13] = 1;
-                        case SDL_SCANCODE_C:
-                            chip8_emu.key[14] = 1;
-                        case SDL_SCANCODE_V:
-                            chip8_emu.key[15] = 1;
-                        default:
-                            break;
-                    }
-                }
-        }
-
-        // clears the screen
-        SDL_RenderClear(rend);
-
-        // triggers the double buffers for multiple rendering
-        SDL_RenderPresent(rend);
-
-        // calculates to 60 fps
-        SDL_Delay(1000 / 60);
-    }
-
-    // destroy renderer
-    SDL_DestroyRenderer(rend);
-
-    // destroy window
-    SDL_DestroyWindow(win);
-}
+#include "cpu.h"
 
 void handle_rom_input(int argc, char **argv){
     // parse the input
@@ -223,32 +39,6 @@ void handle_rom_input(int argc, char **argv){
     fclose(f);
 
     free(buffer);
-}
-
-void write_fontset_to_memory(){
-    // writes fontset to the following memory addresses: 0x050-0x0A0
-    unsigned char chip8_fontset[80] = {
-        0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-        0x20, 0x60, 0x20, 0x20, 0x70, // 1
-        0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-        0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-        0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-        0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-        0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-        0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-        0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-        0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-        0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-        0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-        0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-        0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-        0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-        0xF0, 0x80, 0xF0, 0x80, 0x80  // F
-    };
-    int i;
-    for (i = 0; i < 80; ++i){
-        chip8_emu.memory[i+0x050] = chip8_fontset[i];
-    }
 }
 
 void emulate_cycle(){
@@ -575,6 +365,32 @@ void emulate_cycle(){
         printf("BEEP!\n");
         chip8_emu.sound_timer--;
         }
+    }
+}
+
+void write_fontset_to_memory(){
+    // writes fontset to the following memory addresses: 0x050-0x0A0
+    unsigned char chip8_fontset[80] = {
+        0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+        0x20, 0x60, 0x20, 0x20, 0x70, // 1
+        0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+        0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+        0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+        0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+        0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+        0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+        0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+        0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+        0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+        0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+        0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+        0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+        0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+        0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+    };
+    int i;
+    for (i = 0; i < 80; ++i){
+        chip8_emu.memory[i+0x050] = chip8_fontset[i];
     }
 }
 
