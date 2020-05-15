@@ -12,18 +12,19 @@ int main(int argc, char **argv){
     // Loads game ROM and fontset into chip8_emu memory
     SDL_OBJECTS graphics_container;
     initialize_chip8(argc, argv, &graphics_container);
-    update_graphics(graphics_container.win,
-                    graphics_container.rend,
-                    graphics_container.screen_surface);
-/*
+
     for (;;){
         emulate_cycle();
         if (chip8_emu.draw_flag){
-            update_graphics();
+            update_graphics(&graphics_container);
         }
         handle_key_press();
     }
-*/
+
+    // cleanup SDL_Window and SDL_Renderer
+    SDL_DestroyRenderer(graphics_container.rend);
+    SDL_DestroyWindow(graphics_container.win);
+
     return 0;
 }
 

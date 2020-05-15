@@ -1,5 +1,5 @@
 bin/
-include/
+include/SDL2/
 lib/
 resources/
 test/

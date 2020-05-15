@@ -393,8 +393,3 @@ void write_fontset_to_memory(){
         chip8_emu.memory[i+0x050] = chip8_fontset[i];
     }
 }
-
-void handle_key_press(){
-    // need to implement
-    return;
-}
